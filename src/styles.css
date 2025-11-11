@@ -1,0 +1,68 @@
+/* Global styles and responsive helpers */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px;
+}
+
+.grid-wrapper {
+  flex: 1;
+  min-height: 300px;
+  height: calc(100vh - 160px);
+  margin-top: 8px;
+}
+
+/* Ensure AG Grid fills its container */
+.ag-theme-quartz, .ag-theme-alpine, .ag-theme-material {
+  height: 100%;
+  width: 100%;
+}
+
+/* Zebra striping for rows (without affecting selected/hover states) */
+.ag-theme-quartz .ag-row-odd:not(.ag-row-selected):not(.ag-row-hover) {
+  background-color: #f1f3f5; /* slightly darker for better contrast */
+}
+.ag-theme-quartz .ag-row-even:not(.ag-row-selected):not(.ag-row-hover) {
+  background-color: #ffffff;
+}
+
+/* Status-driven row background: apply only to cells after the first three columns */
+/* We target cells by column index: .ag-cell[col-id="..."] would need ids, so use nth-child for simplicity */
+.ag-theme-quartz .row-status-review .ag-cell:nth-child(n+4) {
+  background-color: #90caf9 !important; /* light blue */
+  color: #003b73; /* darker text for contrast */
+}
+.ag-theme-quartz .row-status-flagged .ag-cell:nth-child(n+4) {
+  background-color: #fff59d !important; /* yellow */
+}
+/* Other statuses keep zebra defaults; no extra rule needed */
+
+/* File drop highlight */
+.dropzone {
+  border: 2px dashed rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  transition: border-color 0.2s ease-in-out, background 0.2s ease-in-out;
+}
+.dropzone.dragover {
+  border-color: #1976d2;
+  background: rgba(25, 118, 210, 0.06);
+}
