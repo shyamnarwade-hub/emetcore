@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeProvider, CssBaseline, Container, Box, Snackbar, Alert, CircularProgress, Stack, Typography } from '@mui/material';
 import { getAppTheme } from './theme';
 import Header from './components/Header';
-import FileUploader, { ParsedData } from './components/FileUploader';
-import ColumnSelector from './components/ColumnSelector';
+import FileUploader, { ParsedData, FileUploaderHandle } from './components/FileUploader';
+// import ColumnSelector from './components/ColumnSelector';
 import DataGridView, { AppRow } from './components/DataGridView';
 import Login from './components/Login';
 import * as XLSX from 'xlsx';
@@ -31,6 +31,7 @@ function App() {
   const [parsing, setParsing] = useState<boolean>(false);
   const [authed, setAuthed] = useState<boolean>(() => sessionStorage.getItem('auth') === '1');
   const defaultLoadedRef = useRef(false);
+  const uploaderRef = useRef<FileUploaderHandle | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -156,13 +157,15 @@ function App() {
     };
   }, [authed, rows.length]);
 
+  const triggerBatchNotices = useCallback(() => {
+    uploaderRef.current?.open();
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box className="app-container">
         <Header
-          hasData={rows.length > 0}
-          onClear={clearData}
           onToggleTheme={themeToggle}
           onLogout={authed ? handleLogout : undefined}
         />
@@ -172,20 +175,10 @@ function App() {
             <Login onSuccess={handleLoginSuccess} />
           ) : (
             <>
-          <Box sx={{ display: 'flex', justifyContent: 'center', mb: { xs: 2, sm: 3 } }}>
-            <FileUploader onParsed={onParsed} onError={setError} onParsingChange={setParsing} />
-          </Box>
+          {/* Hidden file uploader; triggered by Batch Notices button in the grid header */}
+          <FileUploader ref={uploaderRef} hideButton onParsed={onParsed} onError={setError} onParsingChange={setParsing} />
 
-          {allColumns.length > 0 && !parsing && (
-            <Box sx={{ mt: 1, mb: { xs: 1, sm: 2 } }}>
-              <ColumnSelector
-                allColumns={allColumns}
-                selectedColumns={selectedColumns}
-                onChange={setSelectedColumns}
-                preferredDefaults={PREFERRED_DEFAULTS}
-              />
-            </Box>
-          )}
+          {/* ColumnSelector removed in favor of in-grid toolbar popover */}
 
           <Box className="grid-wrapper" sx={{ mt: 2 }}>
             {parsing ? (
@@ -200,6 +193,9 @@ function App() {
                 rows={rows}
                 pageSize={pageSize}
                 onPageSizeChange={setPageSize}
+                onColumnsChange={setSelectedColumns}
+                preferredDefaults={PREFERRED_DEFAULTS}
+                onBatchNotices={triggerBatchNotices}
               />
             ) : (
               <Stack alignItems="center" justifyContent="center" sx={{ height: '100%', color: 'text.secondary' }}>

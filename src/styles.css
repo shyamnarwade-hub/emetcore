@@ -35,6 +35,12 @@ body {
   width: 100%;
 }
 
+/* Remove any inner rounding from AG Grid so it aligns with our outer frame */
+.ag-theme-quartz .ag-root-wrapper,
+.ag-theme-quartz .ag-root {
+  border-radius: 0 !important;
+}
+
 /* Zebra striping for rows (without affecting selected/hover states) */
 .ag-theme-quartz .ag-row-odd:not(.ag-row-selected):not(.ag-row-hover) {
   background-color: #f1f3f5; /* slightly darker for better contrast */

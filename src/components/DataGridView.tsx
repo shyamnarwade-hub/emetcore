@@ -1,7 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Box, FormControl, InputLabel, MenuItem, Select, SelectChangeEvent, Stack, Typography } from '@mui/material';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Box, FormControl, InputLabel, MenuItem, Select, SelectChangeEvent, Stack, Typography, TextField, Button } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs, { Dayjs } from 'dayjs';
+import GridToolbar from './GridToolbar';
+import GridActionsToolbar from './GridActionsToolbar';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, GridApi, GridReadyEvent, RowClassRules } from 'ag-grid-community';
+import type { ColDef, GridApi, GridReadyEvent, RowClassRules, FirstDataRenderedEvent } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
 
@@ -13,10 +19,21 @@ interface Props {
   rows: AppRow[];
   pageSize: number;
   onPageSizeChange: (n: number) => void;
+  onColumnsChange?: (cols: string[]) => void;
+  preferredDefaults?: string[];
+  onBatchNotices?: () => void;
 }
 
-const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pageSize, onPageSizeChange }: Props) {
+const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pageSize, onPageSizeChange, onColumnsChange, preferredDefaults, onBatchNotices }: Props) {
   const gridApiRef = useRef<GridApi | null>(null);
+  const columnApiRef = useRef<any>(null);
+  const initializedRef = useRef(false);
+
+  // Filters state (left side toolbar)
+  const [letterCode, setLetterCode] = useState<string>('');
+  const [accountNumber, setAccountNumber] = useState<string>('');
+  const [fromDate, setFromDate] = useState<string>(''); // MM/DD/YYYY
+  const [toDate, setToDate] = useState<string>('');
 
   // Utility: parse various date string formats common in CSV/Excel
   const parseDate = useCallback((value: unknown): Date | null => {
@@ -61,7 +78,7 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
       let hits = 0;
       let seen = 0;
       for (let i = 0; i < sampleCount; i++) {
-        const v = rows[i]?.[c];
+        const v = (rows[i] as any)?.[c];
         if (v === '' || v == null) continue;
         seen++;
         if (parseDate(v)) hits++;
@@ -109,6 +126,20 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
     'row-status-pending': params => params.data?.Status === 'Pending',
   }), []);
 
+  // Header renames for display only (underlying field keys unchanged)
+  const headerNameMap: Record<string, string> = useMemo(() => ({
+    // Previously requested
+    ErrorText: 'Flag',
+    // New mappings
+    LetterNoticeID: 'Document ID',
+    LoanNumber: 'Account Number',
+    LetterCode: 'Letter Code',
+    BorrowerFullName: 'Full Name',
+    LetterDate: 'Letter Date',
+    RecipientType: 'Recipient Type',
+    RecipientTypeDescription: 'Recipient Type Description',
+  }), []);
+
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map((c) => {
       const isDate = dateColumns.has(c);
@@ -116,7 +147,8 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
       const isStatus = c === 'Status';
       const base: ColDef = {
         field: c,
-        headerName: c,
+        headerName: headerNameMap[c] ?? c,
+        headerTooltip: headerNameMap[c] ?? c,
         sortable: true,
         resizable: true,
         minWidth: isFlag ? 80 : 140,
@@ -127,8 +159,22 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
           comparator: dateComparator,
           browserDatePicker: true,
         } as any;
-        // Keep grid display unchanged (let raw values render)
-        delete (base as any).valueFormatter;
+        // Use a value formatter so dates show with full 4-digit year (MM/DD/YYYY)
+        base.valueFormatter = (params: any) => {
+          const d = parseDate(params.value);
+          if (!d) return params.value ?? '';
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const yyyy = String(d.getFullYear());
+          return `${mm}/${dd}/${yyyy}`;
+        };
+        // Ensure sorting compares by date value, not string
+        base.comparator = (a: any, b: any) => {
+          const da = parseDate(a)?.getTime() ?? Number.NEGATIVE_INFINITY;
+          const db = parseDate(b)?.getTime() ?? Number.NEGATIVE_INFINITY;
+          if (da === db) return 0;
+          return da < db ? -1 : 1;
+        };
       } else if (isFlag) {
         base.filter = false;
         base.cellRenderer = (params: any) => {
@@ -168,17 +214,35 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
     });
   }, [columns, dateColumns, dateComparator, statusTextColor]);
 
-  const onGridReady = useCallback((params: GridReadyEvent) => {
-    gridApiRef.current = params.api;
-    // Fit columns to available width
-    params.api.sizeColumnsToFit();
+  const autoSizeAll = useCallback(() => {
+    // Prefer new API if available; fallback to legacy columnApi
+    const api: any = gridApiRef.current as any;
+    const colApi: any = columnApiRef.current as any;
+    if (api && typeof api.autoSizeAllColumns === 'function') {
+      api.autoSizeAllColumns();
+    } else if (colApi && typeof colApi.autoSizeAllColumns === 'function') {
+      colApi.autoSizeAllColumns();
+    }
   }, []);
 
+  const onGridReady = useCallback((params: GridReadyEvent) => {
+    gridApiRef.current = params.api;
+    // Some versions expose columnApi, keep it if present
+    (columnApiRef as any).current = (params as any).columnApi ?? null;
+    // Auto-size to header content so full header names are visible; allow horizontal scroll
+    setTimeout(() => autoSizeAll(), 0);
+  }, [autoSizeAll]);
+
+  const onFirstDataRendered = useCallback((e: FirstDataRenderedEvent) => {
+    // Ensure sizing after data arrives as well
+    autoSizeAll();
+  }, [autoSizeAll]);
+
   useEffect(() => {
-    const resize = () => gridApiRef.current?.sizeColumnsToFit();
+    const resize = () => autoSizeAll();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, []);
+  }, [autoSizeAll]);
 
   const handlePageSizeChange = (e: SelectChangeEvent<number>) => {
     const val = Number(e.target.value);
@@ -190,43 +254,192 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
 
   const noData = rows.length === 0 || columns.length === 0;
 
-  return (
-    <Box display="flex" flexDirection="column" height="100%" gap={1}>
-      {/* <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel id="page-size-label">Rows per page</InputLabel>
-          <Select<number>
-            labelId="page-size-label"
-            value={pageSize}
-            label="Rows per page"
-            onChange={handlePageSizeChange}
-          >
-            {[10, 20, 25, 50, 100, 250, 500].map((n) => (
-              <MenuItem key={n} value={n}>
-                {n}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Stack> */}
+  // Compute unique Letter Code values from all loaded rows
+  const letterCodeOptions = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      const v = String((r as any)['LetterCode'] ?? '').trim();
+      if (v) set.add(v);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
-      <Box className="ag-theme-quartz" sx={{ flex: 1, minHeight: 300 }}>
+  const fmt = useCallback((d: Date) => {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  }, []);
+
+  // Default last 7 days range when new rows arrive (first load per dataset)
+  useEffect(() => {
+    if (!initializedRef.current && rows.length > 0) {
+      const today = new Date();
+      const from = new Date(today);
+      from.setDate(today.getDate() - 7);
+      setFromDate(fmt(new Date(from.getFullYear(), from.getMonth(), from.getDate())));
+      setToDate(fmt(today));
+      setLetterCode('');
+      setAccountNumber('');
+      initializedRef.current = true;
+    }
+  }, [rows.length, fmt]);
+
+  const applyReset = useCallback(() => {
+    const today = new Date();
+    const from = new Date(today);
+    from.setDate(today.getDate() - 7);
+    setFromDate(fmt(new Date(from.getFullYear(), from.getMonth(), from.getDate())));
+    setToDate(fmt(today));
+    setLetterCode('');
+    setAccountNumber('');
+    // Clear any ag-Grid internal filters just in case
+    gridApiRef.current?.setFilterModel(null as any);
+  }, [fmt]);
+
+  // Derived filtered rows based on toolbar filters
+  const filteredRows = useMemo(() => {
+    if (noData) return [] as AppRow[];
+    const start = fromDate ? parseDate(fromDate) : null;
+    const end = toDate ? parseDate(toDate) : null;
+    if (start) start.setHours(0, 0, 0, 0);
+    if (end) end.setHours(23, 59, 59, 999);
+    const acct = accountNumber.trim();
+    const code = letterCode.trim();
+    return rows.filter((r) => {
+      // Date filter on LetterDate
+      if (start || end) {
+        const d = parseDate((r as any)['LetterDate']);
+        if (!d) return false;
+        if (start && d < start) return false;
+        if (end && d > end) return false;
+      }
+      // Letter Code filter
+      if (code && String((r as any)['LetterCode'] ?? '') !== code) return false;
+      // Account Number filter (substring match on LoanNumber)
+      if (acct) {
+        const ln = String((r as any)['LoanNumber'] ?? '').toLowerCase();
+        if (!ln.includes(acct.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [noData, rows, fromDate, toDate, letterCode, accountNumber, parseDate]);
+
+  return (
+    <Box display="flex" flexDirection="column" height="100%">
+      {/* Toolbar with rounded top corners and shared border frame */}
+      <Box
+        sx={{
+          px: 1.5,
+          py: 1.25,
+          border: 2,
+          borderColor: 'divider',
+          borderTopLeftRadius: 8,
+          borderTopRightRadius: 8,
+          borderBottom: 0,
+          bgcolor: 'background.paper',
+          overflow: 'hidden',
+          minHeight: 60,
+          display: 'grid',
+          gridTemplateColumns: 'auto auto 1fr',
+          alignItems: 'center',
+          columnGap: 8,
+        }}
+      >
+        {/* Section 1: Letter Code + Account Number (stacked) */}
+        <Stack direction="column" spacing={0.75} alignItems="stretch" sx={{ overflow: 'visible' }}>
+          <FormControl size="small" sx={{ minWidth: 160, '& .MuiInputBase-root': { height: 36 } }}>
+            <InputLabel id="lc-label">Letter Code</InputLabel>
+            <Select
+              labelId="lc-label"
+              value={letterCode as any}
+              label="Letter Code"
+              onChange={(e) => setLetterCode(String(e.target.value))}
+            >
+              <MenuItem value="">
+                <em>All</em>
+              </MenuItem>
+              {letterCodeOptions.map((opt) => (
+                <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            size="small"
+            label="Account Number"
+            autoComplete="off"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            sx={{ width: 220, '& .MuiInputBase-root': { height: 36 }, '& input': { p: '6px 8px' } }}
+          />
+        </Stack>
+        {/* Section 2: Letter Date (caption + From/To + Reset) */}
+        <Stack direction="column" spacing={0.5} alignItems="stretch" sx={{ overflow: 'visible' }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', pl: 0.25 }}>Letter Date</Typography>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <Stack direction="row" spacing={0.75} alignItems="center">
+              <DatePicker
+                value={fromDate ? dayjs(fromDate, 'MM/DD/YYYY') : null}
+                onChange={(d: Dayjs | null) => setFromDate(d && d.isValid() ? d.format('MM/DD/YYYY') : '')}
+                format="MM/DD/YYYY"
+                slotProps={{ textField: { size: 'small', sx: { width: 150, '& .MuiInputBase-root': { height: 36 } } } }}
+                label="From"
+              />
+              <DatePicker
+                value={toDate ? dayjs(toDate, 'MM/DD/YYYY') : null}
+                onChange={(d: Dayjs | null) => setToDate(d && d.isValid() ? d.format('MM/DD/YYYY') : '')}
+                format="MM/DD/YYYY"
+                slotProps={{ textField: { size: 'small', sx: { width: 150, '& .MuiInputBase-root': { height: 36 } } } }}
+                label="To"
+              />
+              <Button size="small" variant="outlined" onClick={applyReset} sx={{ height: 36, whiteSpace: 'nowrap' }}>Reset</Button>
+            </Stack>
+          </LocalizationProvider>
+        </Stack>
+        {/* Section 3: Action buttons + Columns chooser, flexes to take remaining space */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', overflowX: 'auto', gap: 1, pr: 1, justifySelf: 'stretch' }}>
+          <GridActionsToolbar onBatchNotices={onBatchNotices} />
+          <GridToolbar
+            allColumns={allColumns}
+            selectedColumns={columns}
+            onChange={(cols) => onColumnsChange && onColumnsChange(cols)}
+            preferredDefaults={preferredDefaults}
+          />
+        </Box>
+      </Box>
+
+      {/* Grid with straight borders (no rounding), aligned to toolbar frame */}
+      <Box
+        className="ag-theme-quartz"
+        sx={{
+          flex: 1,
+          minHeight: 300,
+          borderLeft: 2,
+          borderRight: 2,
+          borderBottom: 2,
+          borderTop: 0,
+          borderColor: 'divider',
+          borderRadius: 0,
+        }}
+      >
         <AgGridReact
           columnDefs={colDefs}
-          rowData={noData ? [] : rows}
+          rowData={noData ? [] : filteredRows}
           pagination
           paginationPageSize={pageSize}
           animateRows
           rowSelection="multiple"
           onGridReady={onGridReady}
+          onFirstDataRendered={onFirstDataRendered}
           suppressColumnVirtualisation={false}
           enableBrowserTooltips
           rowClassRules={rowClassRules}
-          localeText={{ dateFormat: 'DD/MM/YYYY' }}
+          localeText={{ dateFormat: 'MM/DD/YYYY' }}
           defaultColDef={{
             sortable: true,
             filter: true,
             resizable: true,
+            tooltipValueGetter: (p: any) => (p?.value == null ? '' : String(p.value)),
           }}
         />
       </Box>

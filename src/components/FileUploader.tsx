@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { Box, Button, Stack } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import * as XLSX from 'xlsx';
@@ -10,15 +10,20 @@ export interface ParsedData {
   rows: AppRow[];
 }
 
+export interface FileUploaderHandle {
+  open: () => void;
+}
+
 interface Props {
   onParsed: (data: ParsedData) => void;
   onError: (message: string) => void;
   onParsingChange?: (loading: boolean) => void;
+  hideButton?: boolean; // if true, don't render the visible Choose file button
 }
 
 const MAX_FILE_SIZE_MB = 15;
 
-export default function FileUploader({ onParsed, onError, onParsingChange }: Props) {
+const FileUploader = forwardRef<FileUploaderHandle, Props>(function FileUploader({ onParsed, onError, onParsingChange, hideButton }: Props, ref) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
 
@@ -84,18 +89,24 @@ export default function FileUploader({ onParsed, onError, onParsingChange }: Pro
 
   const openPicker = () => inputRef.current?.click();
 
+  useImperativeHandle(ref, () => ({
+    open: openPicker,
+  }));
+
   return (
     <Box>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={2}
-        alignItems="center"
-        justifyContent="center"
-      >
-        <Button variant="contained" startIcon={<UploadFileIcon />} onClick={openPicker}>
-          Choose file
-        </Button>
-      </Stack>
+      {!hideButton && (
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Button variant="contained" startIcon={<UploadFileIcon />} onClick={openPicker}>
+            Choose file
+          </Button>
+        </Stack>
+      )}
 
       <input
         type="file"
@@ -108,4 +119,6 @@ export default function FileUploader({ onParsed, onError, onParsingChange }: Pro
       {/* Drag-and-drop removed: using only file picker */}
     </Box>
   );
-}
+});
+
+export default FileUploader;
