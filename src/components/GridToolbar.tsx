@@ -22,9 +22,9 @@ export default function GridToolbar({ allColumns, selectedColumns, onChange, pre
     // New mappings
     LetterNoticeID: 'Document ID',
     LoanNumber: 'Account Number',
-    LetterCode: 'Letter Code',
+    LetterCode: 'Document Code',
     BorrowerFullName: 'Full Name',
-    LetterDate: 'Letter Date',
+    LetterDate: 'Document Date',
     RecipientType: 'Recipient Type',
     RecipientTypeDescription: 'Recipient Type Description',
   }), []);

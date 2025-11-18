@@ -133,9 +133,9 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
     // New mappings
     LetterNoticeID: 'Document ID',
     LoanNumber: 'Account Number',
-    LetterCode: 'Letter Code',
+    LetterCode: 'Document Code',
     BorrowerFullName: 'Full Name',
-    LetterDate: 'Letter Date',
+    LetterDate: 'Document Date',
     RecipientType: 'Recipient Type',
     RecipientTypeDescription: 'Recipient Type Description',
   }), []);
@@ -349,11 +349,11 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
         {/* Section 1: Letter Code + Account Number (stacked) */}
         <Stack direction="column" spacing={0.75} alignItems="stretch" sx={{ overflow: 'visible' }}>
           <FormControl size="small" sx={{ minWidth: 160, '& .MuiInputBase-root': { height: 36 } }}>
-            <InputLabel id="lc-label">Letter Code</InputLabel>
+            <InputLabel id="lc-label">Document Code</InputLabel>
             <Select
               labelId="lc-label"
               value={letterCode as any}
-              label="Letter Code"
+              label="Document Code"
               onChange={(e) => setLetterCode(String(e.target.value))}
             >
               <MenuItem value="">
@@ -375,7 +375,7 @@ const DataGridView = memo(function DataGridView({ allColumns, columns, rows, pag
         </Stack>
         {/* Section 2: Letter Date (caption + From/To + Reset) */}
         <Stack direction="column" spacing={0.5} alignItems="stretch" sx={{ overflow: 'visible' }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary', pl: 0.25 }}>Letter Date</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', pl: 0.25 }}>Document Date</Typography>
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Stack direction="row" spacing={0.75} alignItems="center">
               <DatePicker

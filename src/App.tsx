@@ -27,7 +27,7 @@ function App() {
   const [allColumns, setAllColumns] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [rows, setRows] = useState<AppRow[]>([]);
-  const [pageSize, setPageSize] = useState<number>(20);
+  const [pageSize, setPageSize] = useState<number>(100);
   const [parsing, setParsing] = useState<boolean>(false);
   const [authed, setAuthed] = useState<boolean>(() => sessionStorage.getItem('auth') === '1');
   const defaultLoadedRef = useRef(false);
